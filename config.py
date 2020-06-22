@@ -14,3 +14,6 @@ DEBUG                     = True
 PORT                      = 5000
 MAX_UPLOAD_PROCESSES      = 2
 MAX_DOWNLOAD_PROCESSES    = 2
+ALLOWED_EXTENSIONS        = {'csv'}
+UPLOAD_FOLDER             = "/root/uploads/"
+DOWNLOAD_FOLDER           = "/root/downloads/"

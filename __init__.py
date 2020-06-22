@@ -1,14 +1,18 @@
-from flask import Flask, render_template, session
+from flask import Flask, render_template, session, redirect, make_response, request
 from flask_session import Session
 import redis
 from multiprocessing import Process, Queue
 from time import sleep
 import uuid
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+import os
 
 from helpers import *
 
 app     = Flask(__name__)
 app.config.from_object("config")
+CORS(app)
 
 """
 Validate enviroment variables are present
@@ -37,9 +41,16 @@ uploadQueue = Queue()
 downloadQueue = Queue()
 
 """
+Determine if the file is in an accepted format
+"""
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+"""
 Functions for rate limiting uploads and downloads to not overwhelm the system
 """
-def process_files_to_s3(queue):
+def process_files_to_s3():
   
     while True:
 
@@ -47,10 +58,10 @@ def process_files_to_s3(queue):
 
         processes = []
 
-        while queue.qsize() > 0:
+        while uploadQueue.qsize() > 0:
 
-            proc = queue.get()
-            processes.add(proc)
+            _filename = uploadQueue.get()
+            processes.append(Process(target=upload_file_to_s3, args=(_filename, app.config["S3_BUCKET"],)))
 
             if(len(processes) == app.config['MAX_UPLOAD_PROCESSES']):
                 break
@@ -62,11 +73,12 @@ def process_files_to_s3(queue):
         for process in processes:
             process.join()
 
+
         #print("Batch of processes is done")
 
-        sleep(1)
+        sleep(2)
 
-def process_files_from_s3(queue):
+def process_files_from_s3():
   
     while True:
 
@@ -74,10 +86,11 @@ def process_files_from_s3(queue):
 
         processes = []
 
-        while uploadQueue.qsize() > 0:
-
-            proc = uploadQueue.get()
-            processes.add(proc)
+        while downloadQueue.qsize() > 0:
+            print("new download process")
+            proc = downloadQueue.get()
+            print("new download process" , proc)
+            processes.append(proc)
 
             if(len(processes) == app.config['MAX_DOWNLOAD_PROCESSES']):
                 break
@@ -91,28 +104,41 @@ def process_files_from_s3(queue):
 
         #print("Batch of processes is done")
 
-        sleep(1)
+        sleep(2)
 
     
 @app.route("/", methods=['GET'])
-def set_session():
-    value = str(uuid.uuid4())
-    
-    """
-    Generate new identifier if it exists already
-    """
-    while redisClient.get(value):
-        value = uuid.uuid4()
+def maintain_session():
 
-    session['key'] = value
+    print("received request")
 
-    return value
+    user_id = request.cookies.get('session')
+    print(user_id)
+    if not user_id:
+
+        value = str(uuid.uuid4())
+        
+        """
+        Generate new identifier if it exists already
+        """
+        while redisClient.get(value):
+            value = uuid.uuid4()
+
+        session['key'] = value
+
+        res = make_response(redirect('/'))
+
+        res.headers['Access-Control-Allow-Origin'] = '*'
+
+        return res
     
+    return ('', 200)
 """
 Return list of files
 """
 @app.route("/fetchfiles", methods=['GET'])
 def fetch_files():
+
     return 0
 
 """
@@ -126,19 +152,19 @@ If not fetch from S3
 def download_file():
 
     try:
-        user_id = request.cookies.get('user_id')
+        user_id = request.cookies.get('session')
         _file_identifier = request.args.get('file')
     except:
         return redirect("/")
     
-    if not redisClient.get(user_id):
+    if not redisClient.get('session:{}'.format(user_id)):
         return redirect("/")
     
-    for i in range(redisClient.llen(user_id)):
-        if redisClient.lindex(user_id, i).decode("utf-8") == _file_identifier:
+    #for i in range(redisClient.llen(user_id)):
+    #    if redisClient.lindex(user_id, i).decode("utf-8") == _file_identifier:
 
 
-		return send_file('/var/www/PythonProgramming/PythonProgramming/static/images/python.jpg', attachment_filename='python.jpg')
+	#return send_file('/var/www/PythonProgramming/PythonProgramming/static/images/python.jpg', attachment_filename='python.jpg')
 
     return 0
 
@@ -146,20 +172,22 @@ def download_file():
 def upload_file():
 
     try:
-        user_id = request.cookies.get('user_id')
+        user_id = request.cookies.get('session')
     except:
         return redirect("/")
     
-    if not redisClient.get(user_id):
+
+    if not redisClient.get('session:{}'.format(user_id)):
         return redirect("/")
 
 	# A
-    if "user_file" not in request.files:
-        return "No user_file key in request.files"
+    if "file" not in request.files:
+        return "No file key in request.files"
+
+
 
 	# B
-    file    = request.files["user_file"]
-
+    file = request.files['file']
     """
         These attributes are also available
 
@@ -176,15 +204,17 @@ def upload_file():
 
 	# D.
     if file and allowed_file(file.filename):
+
         file.filename = secure_filename(file.filename)
 
-        _file_identifier = str(uuid.uuid4()
+        _file_identifier = str(uuid.uuid4())
 
         while redisClient.get(_file_identifier):
             _file_identifier = uuid.uuid4()
 
         _filename = '{}.csv'.format(_file_identifier)
-
+        print("this is the file name", _filename)
+        print(os.path.join(app.config['UPLOAD_FOLDER']))
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], _filename))
 
         _file = {"Name": file.filename}
@@ -192,7 +222,7 @@ def upload_file():
         redisClient.hmset(_file_identifier, _file)
         redisClient.lpush(user_id, _file_identifier)
 
-        uploadQueue.put(Process(target=upload_file_to_s3, args=(file, _filename, app.config["S3_BUCKET"],)))
+        uploadQueue.put(_filename)
 
         return _file_identifier
 
@@ -201,6 +231,6 @@ def upload_file():
 
 if __name__ == "__main__":
 
-    Process(target=process_files_to_s3, args=(uploadQueue,)).start()
-    Process(target=process_files_from_s3, args=(downloadQueue,)).start()
+    Process(target=process_files_to_s3, args=()).start()
+    Process(target=process_files_from_s3, args=()).start()
     app.run()

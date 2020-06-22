@@ -17,3 +17,4 @@ MAX_DOWNLOAD_PROCESSES    = 2
 ALLOWED_EXTENSIONS        = {'csv'}
 UPLOAD_FOLDER             = "/root/uploads/"
 DOWNLOAD_FOLDER           = "/root/downloads/"
+MAX_CONTENT_LENGTH        = 100 * 1024 * 1024

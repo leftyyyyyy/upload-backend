@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 import os
 
 from helpers import *
+from stats import *
 
 app     = Flask(__name__)
 app.config.from_object("config")
@@ -125,23 +126,23 @@ Return list of files
 @app.route("/fetchfiles", methods=['GET'])
 def fetch_files():
 
-    print("fetching files")
     _files = []
     
     user_id = request.cookies.get('session')
 
-    print("userid is", user_id)
-
     _file_identifiers = redisClient.lrange(user_id, 0, -1 )
 
-    print("IDs is", _file_identifiers)
     for _id in _file_identifiers:
         _file_info = redisClient.hgetall(_id.decode("utf-8"))
         unidict = {k.decode('utf8'): v.decode('utf8') for k, v in _file_info.items()}
+
+        if 'CustomStatIdentifier' not in unidict.keys():
+            unidict['Stats'] = {}
+        else:
+            unidict['Stats'] = redisClient.hgetall(unidict['CustomStatIdentifier'])
+
         _files.append(unidict)
 
-    print(_files)
-    print(jsonify(_files))
     return jsonify(_files)
 
 """
@@ -191,7 +192,7 @@ def download_file():
     _file_name_in_s3 = _input_file_identifier + ".csv"
 
     print(_file_name_in_s3)
-    
+
     return Response(
         get_object(_file_name_in_s3),
         mimetype='text/plain',
@@ -242,13 +243,25 @@ def upload_file():
         while redisClient.get(_file_identifier):
             _file_identifier = uuid.uuid4()
 
+        _stat_identifier = str(uuid.uuid4())
+
+        while redisClient.get(_stat_identifier):
+            _stat_identifier = uuid.uuid4()
+
         _filename = '{}.csv'.format(_file_identifier)
 
         upload_file_to_s3(_filename, file)
 
-        _file = {"Name": file.filename, "Identifier": _file_identifier}
+        file.seek(0)
 
+        _custom_stat = calculate(file)
+
+        _file = {"Name": file.filename, "Identifier": _file_identifier, "CustomStatIdentifier": _stat_identifier}
+        
         redisClient.hmset(_file_identifier, _file)
+
+        redisClient.hmset(_stat_identifier, _custom_stat)
+
         redisClient.lpush(user_id, _file_identifier)
 
         
@@ -261,8 +274,6 @@ def upload_file():
     #         break
             
     #     upload_chunk_to_s3(_filename, chunk)
-
-    uploading-=1
 
     return ('Upload successful',200)
 

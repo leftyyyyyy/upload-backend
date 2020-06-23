@@ -12,6 +12,10 @@ from stats import *
 
 app     = Flask(__name__)
 app.config.from_object("config")
+
+"""
+Allow connection for the local client
+"""
 CORS(app)
 
 """

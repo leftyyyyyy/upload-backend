@@ -1,6 +1,8 @@
 import os
 import redis
 
+os.environ["MODIN_ENGINE"] = "ray"
+
 S3_BUCKET                 = os.environ.get("S3_BUCKET_NAME")
 S3_KEY                    = os.environ.get("S3_ACCESS_KEY")
 S3_SECRET                 = os.environ.get("S3_SECRET_ACCESS_KEY")
@@ -16,5 +18,4 @@ MAX_UPLOAD_PROCESSES      = 2
 MAX_DOWNLOAD_PROCESSES    = 2
 ALLOWED_EXTENSIONS        = {'csv'}
 UPLOAD_FOLDER             = "/root/uploads/"
-DOWNLOAD_FOLDER           = "/root/downloads/"
 MAX_CONTENT_LENGTH        = 100 * 1024 * 1024

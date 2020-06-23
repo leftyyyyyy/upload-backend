@@ -1,7 +1,6 @@
 from flask import Flask, render_template, session, redirect, make_response, request, jsonify, Response
 from flask_session import Session
 import redis
-from multiprocessing import Process, Queue
 from time import sleep
 import uuid
 from flask_cors import CORS
@@ -36,64 +35,11 @@ Redis client for storing and retrieving user/files information
 redisClient = redis.StrictRedis(host='127.0.0.1', port=6379)
 
 """
-Counters for file uploading/downloading
-"""
-uploading = 0
-downloading = 0
-
-"""
 Determine if the file is in an accepted format
 """
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
-
-"""
-Functions for rate limiting uploads and downloads to not overwhelm the system
-"""
-def process_files_to_s3():
-  
-    while True:
-
-        processes = []
-
-        while uploadQueue.qsize() > 0:
-
-            _filename = uploadQueue.get()
-            processes.append(Process(target=upload_file_to_s3, args=(_filename, app.config["S3_BUCKET"],)))
-
-            if(len(processes) == app.config['MAX_UPLOAD_PROCESSES']):
-                break
-            
-        for process in processes:
-            process.start()
-
-        for process in processes:
-            process.join()
-
-        sleep(2)
-
-def process_files_from_s3():
-  
-    while True:
-
-        processes = []
-
-        while downloadQueue.qsize() > 0:
-            _filename = downloadQueue.get()
-            processes.append(Process(target=download_file_from_s3, args=(_filename, app.config["S3_BUCKET"],)))
-
-            if(len(processes) == app.config['MAX_DOWNLOAD_PROCESSES']):
-                break
-            
-        for process in processes:
-            process.start()
-
-        for process in processes:
-            process.join()
-
-        sleep(2)
-
     
 @app.route("/", methods=['GET'])
 def maintain_session():
@@ -118,7 +64,7 @@ def maintain_session():
 
         return res
     
-    return ('', 200)
+    return jsonify({"Status" : "OK"})
 
 """
 Return list of files
@@ -146,15 +92,14 @@ def fetch_files():
     return jsonify(_files)
 
 """
-Check if the user has the file.
-Retrieve file name.
+Check if the user has the file
+Retrieve file name
 Check if the file exists locally
 If not fetch from S3
 """
 @app.route("/download", methods=['GET'])
 def download_file():
 
-    print("A")
     """
     Ensure the session cookie exists in the request
     """
@@ -164,46 +109,39 @@ def download_file():
     except:
         return redirect("/")
 
-    print("B")
     """
     Ensure the session cookie exists in redis
     """   
     if not redisClient.get('session:{}'.format(user_id)):
         return redirect("/")
 
-    print("C")
     """
     Retrieve the file identifiers for the user
     """
     _file_identifiers = redisClient.lrange(user_id, 0, -1 )
 
-    print("D")
     """
     Check if the input identifier belongs to the user, if so fetch its name
     """
     for _id in _file_identifiers:
         if _id.decode("utf-8") == _input_file_identifier:
             _file_name = redisClient.hgetall(_id)[b'Name'].decode("utf-8")
-            print("the requested file had the following name", _file_name)
 
     if not _file_name:
-        return ("File not found", 404)
+        return jsonify({"Error": "File not found"})
     
     _file_name_in_s3 = _input_file_identifier + ".csv"
-
-    print(_file_name_in_s3)
 
     return Response(
         get_object(_file_name_in_s3),
         mimetype='text/plain',
         headers={"Content-Disposition": "attachment;filename=test.txt"}
     )
-	#return send_file('/var/www/PythonProgramming/PythonProgramming/static/images/python.jpg', attachment_filename='python.jpg')
-
-    return ('Download successful',200)
 
 @app.route("/upload", methods=['POST'])
 def upload_file():
+
+    _file = {}
 
     try:
         user_id = request.cookies.get('session')
@@ -215,23 +153,14 @@ def upload_file():
 
 	# A
     if "file" not in request.files:
-        return "No file key in request.files"
+        return jsonify({"Error": "No file key in request.files"})
 
 	# B
     file = request.files['file']
-    """
-        These attributes are also available
-
-        file.filename               # The actual name of the file
-        file.content_type
-        file.content_length
-        file.mimetype
-
-    """
 
 	# C.
     if file.filename == "":
-        return "Please select a file"
+        return jsonify({"Error": "Please select a file"})
 
 	# D.
     if file and allowed_file(file.filename):
@@ -250,11 +179,17 @@ def upload_file():
 
         _filename = '{}.csv'.format(_file_identifier)
 
-        upload_file_to_s3(_filename, file)
+        upload_object(_filename, file)
 
-        file.seek(0)
+        try:
+            file.seek(0)
+        except:
+            pass
 
-        _custom_stat = calculate(file)
+        try:
+            _custom_stat = calculate(file)
+        except:
+            _custom_stat = {}
 
         _file = {"Name": file.filename, "Identifier": _file_identifier, "CustomStatIdentifier": _stat_identifier}
         
@@ -264,21 +199,10 @@ def upload_file():
 
         redisClient.lpush(user_id, _file_identifier)
 
-        
-    # chunk_size = 1000000
-    # counter = 0
-    # while True:
-    #     chunk = request.stream.read(chunk_size)
-    #     counter+=1
-    #     if len(chunk) == 0:
-    #         break
-            
-    #     upload_chunk_to_s3(_filename, chunk)
+        _file['Stats'] = _custom_stat
 
-    return ('Upload successful',200)
+    return jsonify(_file)
 
 if __name__ == "__main__":
 
-    #Process(target=process_files_to_s3, args=()).start()
-    #Process(target=process_files_from_s3, args=()).start()
     app.run()

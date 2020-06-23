@@ -1,7 +1,4 @@
-import os
 import modin.pandas as pd
-
-os.environ["MODIN_ENGINE"] = "ray"
 
 def calculate(my_file):
 

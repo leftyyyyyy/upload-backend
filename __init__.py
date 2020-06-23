@@ -40,7 +40,10 @@ Determine if the file is in an accepted format
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
-    
+
+"""
+Generate a user session if it doesn't exist in redis
+"""
 @app.route("/", methods=['GET'])
 def maintain_session():
 
@@ -53,35 +56,52 @@ def maintain_session():
         """
         Generate new identifier if it exists already
         """
-
         while redisClient.get(value):
             value = uuid.uuid4()
 
         session['key'] = value
 
         res = make_response(redirect('/'))
-        res.headers['Access-Control-Allow-Origin'] = '*'
 
         return res
     
     return jsonify({"Status" : "OK"})
 
 """
-Return list of files
+Return list of files and their information (name, identifier, stats)
 """
 @app.route("/fetchfiles", methods=['GET'])
 def fetch_files():
 
-    _files = []
-    
-    user_id = request.cookies.get('session')
+    """
+    Ensure the session cookie exists in the request
+    """
+    try:
+        user_id = request.cookies.get('session')
+        _input_file_identifier = request.args.get('file_identifier')
+    except:
+        return redirect("/")
 
+    """
+    Ensure the session cookie exists in redis
+    """   
+    if not redisClient.get('session:{}'.format(user_id)):
+        return redirect("/")
+
+    _files = []
+
+    """
+    Get the list of files that belong to the user
+    """
     _file_identifiers = redisClient.lrange(user_id, 0, -1 )
 
     for _id in _file_identifiers:
         _file_info = redisClient.hgetall(_id.decode("utf-8"))
         unidict = {k.decode('utf8'): v.decode('utf8') for k, v in _file_info.items()}
 
+        """
+        Check if the file has custom stats
+        """
         if 'CustomStatIdentifier' not in unidict.keys():
             unidict['Stats'] = {}
         else:
@@ -94,8 +114,7 @@ def fetch_files():
 """
 Check if the user has the file
 Retrieve file name
-Check if the file exists locally
-If not fetch from S3
+Fetch from S3
 """
 @app.route("/download", methods=['GET'])
 def download_file():
@@ -143,11 +162,18 @@ def upload_file():
 
     _file = {}
 
+    """
+    Ensure the session cookie exists in the request
+    """
     try:
         user_id = request.cookies.get('session')
+        _input_file_identifier = request.args.get('file_identifier')
     except:
         return redirect("/")
-    
+
+    """
+    Ensure the session cookie exists in redis
+    """   
     if not redisClient.get('session:{}'.format(user_id)):
         return redirect("/")
 
@@ -162,6 +188,9 @@ def upload_file():
     if file.filename == "":
         return jsonify({"Error": "Please select a file"})
 
+    """
+    Check if the file is an allowed format and the name is secure. If so, then upload and calculate stats
+    """
 	# D.
     if file and allowed_file(file.filename):
 
@@ -181,6 +210,9 @@ def upload_file():
 
         upload_object(_filename, file)
 
+        """
+        Reset the head of the file after the S3 upload to be read next for stats calculation
+        """
         try:
             file.seek(0)
         except:
@@ -193,10 +225,19 @@ def upload_file():
 
         _file = {"Name": file.filename, "Identifier": _file_identifier, "CustomStatIdentifier": _stat_identifier}
         
+        """
+        Save the file's data under the file identifier
+        """
         redisClient.hmset(_file_identifier, _file)
 
+        """
+        Save the file stats under the stats identifier
+        """
         redisClient.hmset(_stat_identifier, _custom_stat)
 
+        """
+        Add the file identifier to the list of files of the user
+        """
         redisClient.lpush(user_id, _file_identifier)
 
         _file['Stats'] = _custom_stat

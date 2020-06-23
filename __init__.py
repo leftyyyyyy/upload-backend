@@ -1,4 +1,4 @@
-from flask import Flask, render_template, session, redirect, make_response, request, jsonify, Response
+from flask import Flask, session, redirect, request, jsonify, Response
 from flask_session import Session
 import redis
 from time import sleep
@@ -65,9 +65,7 @@ def maintain_session():
 
         session['key'] = value
 
-        res = make_response(redirect('/'))
-
-        return res
+        return redirect("/")
     
     return jsonify({"Status" : "OK"})
 

@@ -82,7 +82,6 @@ def fetch_files():
     """
     try:
         user_id = request.cookies.get('session')
-        _input_file_identifier = request.args.get('file_identifier')
     except:
         return redirect("/")
 
@@ -135,7 +134,7 @@ def download_file():
     """
     Ensure the session cookie exists in redis
     """   
-    if not redisClient.get('session:{}'.format(user_id)):
+    if not _input_file_identifier or not redisClient.get('session:{}'.format(user_id)):
         return redirect("/")
 
     """
@@ -171,7 +170,6 @@ def upload_file():
     """
     try:
         user_id = request.cookies.get('session')
-        _input_file_identifier = request.args.get('file_identifier')
     except:
         return redirect("/")
 
@@ -224,20 +222,21 @@ def upload_file():
 
         try:
             _custom_stat = calculate(file)
+            """
+            Save the file stats under the stats identifier
+            """
+            redisClient.hmset(_stat_identifier, _custom_stat)
+            _file = {"Name": file.filename, "Identifier": _file_identifier, "CustomStatIdentifier": _stat_identifier}
+        
         except:
             _custom_stat = {}
+            _file = {"Name": file.filename, "Identifier": _file_identifier}
 
-        _file = {"Name": file.filename, "Identifier": _file_identifier, "CustomStatIdentifier": _stat_identifier}
-        
+
         """
         Save the file's data under the file identifier
         """
         redisClient.hmset(_file_identifier, _file)
-
-        """
-        Save the file stats under the stats identifier
-        """
-        redisClient.hmset(_stat_identifier, _custom_stat)
 
         """
         Add the file identifier to the list of files of the user

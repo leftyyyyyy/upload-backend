@@ -24,7 +24,7 @@ distributed==2.19.0
 distro-info===0.18ubuntu0.18.04.1
 docutils==0.15.2
 filelock==3.0.12
-Flask==0.12.2
+Flask==1.0
 Flask-Cors==3.0.8
 Flask-Session==0.3.2
 google==2.0.3

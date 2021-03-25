@@ -76,7 +76,7 @@ python-dateutil==2.8.1
 python-debian==0.1.32
 pytz==2020.1
 pyxdg==0.25
-PyYAML==3.12
+PyYAML==5.4
 ray==0.8.4
 redis==3.4.1
 requests==2.18.4

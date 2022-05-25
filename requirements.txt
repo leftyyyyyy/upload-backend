@@ -67,7 +67,7 @@ pycrypto==2.6.1
 Pygments==2.2.0
 pygobject==3.26.1
 pyinotify==0.9.6
-PyJWT==1.5.3
+PyJWT==2.4.0
 pyOpenSSL==17.5.0
 pyparsing==2.4.7
 pyserial==3.4

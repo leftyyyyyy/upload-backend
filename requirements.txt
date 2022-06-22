@@ -50,7 +50,7 @@ modin==0.7.3
 msgpack==0.6.2
 multidict==4.7.6
 netifaces==0.10.4
-numpy==1.19.0
+numpy==1.22.0
 oauthlib==2.0.6
 olefile==0.45.1
 packaging==20.4
